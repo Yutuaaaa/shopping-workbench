@@ -633,7 +633,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Micr
       </div>
       <div class="row3">
         <div class="field"><label>品牌</label><input id="fBrand" placeholder="例如：优衣库"></div>
-        <div class="field"><label>颜色</label><div class="color-input-row"><input id="fColor" placeholder="例如：黑色 / 自行输入新颜色" oninput="syncColorPicker()"><div class="color-pick-btn"><div class="swatch-fill" id="swatchFill"></div><input type="color" id="fColorHex" value="#9b59b6" onchange="pickCustomColor()" title="选择颜色色值"></div></div></div>
+        <div class="field"><label>颜色</label><div class="color-input-row"><input id="fColor" placeholder="例如：黑色 / 藏青 / 自定义" oninput="syncColorPicker()"><div class="color-pick-btn"><div class="swatch-fill" id="swatchFill"></div><input type="color" id="fColorHex" value="#9b59b6" oninput="pickCustomColor()" onchange="pickCustomColor()" title="点击选色，自动识别颜色名"></div></div><div id="colorHint" style="font-size:11px;color:var(--sub);margin-top:4px;min-height:14px;line-height:1.3"></div></div>
         <div class="field"><label>款式</label><input id="fStyle" placeholder="例如：波点"></div>
       </div>
       <div class="row2">
@@ -809,7 +809,7 @@ let CATS=loadCats();
 let ITEMS=loadItems();
 let OUTFITS=loadOutfits();
 let CUSTOM_COLORS=loadColors();
-let editingId=null,pendingImg=null,curFilter="全部",curColor="全部颜色",dupConfirmed=false;
+let editingId=null,pendingImg=null,curFilter="全部",curColor="全部颜色",dupConfirmed=false,pendingSaveData=null;
 let oSelectedIds=[];
 let listView=false;let detailId=null;let dismissedExpiry=false;
 
@@ -829,7 +829,18 @@ function sampleItems(){return [
   {id:uid(),category:"服装",sub:"上衣",name:"针织衫",brand:"",color:"米色",style:"宽松",size:"M",qty:2,location:"衣柜中层",expiry:"",note:"",img:""},
   {id:uid(),category:"护肤化妆品",sub:"护肤",name:"保湿精华",brand:"兰蔻",color:"",style:"",size:"30ml",qty:1,location:"梳妆台",expiry:"2027-05-01",note:"已开封",img:""},
   {id:uid(),category:"服装",sub:"鞋履",name:"小白鞋",brand:"",color:"白色",style:"平底",size:"38",qty:1,location:"鞋柜",expiry:"",note:"",img:""}
-].map(x=>({...x,fav:false,createdAt:Date.now()}));}
+].map(x=>({...x,fav:false,demo:true,createdAt:Date.now()}));}
+/* 示例数据特征签名 — 用于识别历史遗留的示例条目（旧版本没有 demo 标记） */
+const DEMO_SIGNS=[
+  {name:"连衣裙",brand:"ZARA",category:"服装"},
+  {name:"针织衫",brand:"",category:"服装"},
+  {name:"保湿精华",brand:"兰蔻",category:"护肤化妆品"},
+  {name:"小白鞋",brand:"",category:"服装"}
+];
+function isDemoItem(it){
+  if(it.demo===true)return true;
+  return DEMO_SIGNS.some(d=>d.name===it.name&&d.category===it.category&&(d.brand||'')===(it.brand||''));
+}
 
 function renderSummary(){
   document.getElementById('sTotal').textContent=ITEMS.length;
@@ -865,7 +876,7 @@ function renderList(){
   if(!arr.length){g.innerHTML='<div class="empty" style="grid-column:1/-1"><div class="big">📭</div>没有匹配的物品<br>换筛选条件或点下方「＋」添加</div>';renderExpiryWarn();return;}
   g.innerHTML=arr.map((it,idx)=>{
     const col=catColor(it.category);
-    const img=it.img?'<img class="img" src="'+it.img+'" alt="">':'<div class="ph">🧺</div>';
+    const img=itemImgTag(it, it.img?'img':'ph');
     const isNew=!listView&&(it.createdAt||0)>weekAgo?'<span class="badge-new">NEW</span>':'';
     const favIcon=it.fav?'★':'☆';
     const favCls=it.fav?'starred':'';
@@ -893,10 +904,97 @@ function renderList(){
   renderExpiryWarn();
 }
 function catColor(c){const m={"服装":"#6c5ce7","护肤化妆品":"#e84393","生活必需品":"#00b894","数码电器":"#0984e3","食品零食":"#e17055","家居":"#fdcb6e","书籍文具":"#636e72","运动户外":"#00cec9","宠物用品":"#fd79a8"};return m[c]||"#6c5ce7";}
-function colorHex(c){
-  if(CUSTOM_COLORS[c])return CUSTOM_COLORS[c];
-  const m={"黑色":"#2d3436","白色":"#dfe6e9","灰色":"#636e72","红色":"#e74c3c","粉色":"#fab1a0","米色":"#f5e6ca","蓝色":"#74b9ff","绿色":"#00b894","紫色":"#9b59b6","黄色":"#fdcb6e","橙色":"#e17055","棕色":"#8b6914","卡其":"#c4a882","牛仔":"#5b7db1","银":"#bdc3c7","金":"#f1c40f"};
-  return m[c]||"#9b59b6";
+/* ---- 大类可爱图标 ---- */
+const CAT_ICON={
+  "服装":   {"裙装":"👗","上衣":"👚","裤装":"👖","外套":"🧥","内衣家居服":"🩱","鞋履":"👟","包包配饰":"👜","帽子":"🧢","睡衣":"🛌",_def:"👕"},
+  "护肤化妆品":{"护肤":"🧴","彩妆":"💄","香水":"🌸","美甲美睫":"💅","美容仪器":"✨",_def:"💄"},
+  "生活必需品":{"清洁洗护":"🧼","纸品":"🧻","收纳整理":"📦","厨房用品":"🍴","一次性用品":"🥤",_def:"🧺"},
+  "数码电器": {"手机平板配件":"📱","小家电":"🔌","电脑外设":"💻","影音设备":"🎧",_def:"🔌"},
+  "食品零食": {"零食":"🍪","饮品咖啡茶":"☕","生鲜":"🥬","保健品维生素":"💊",_def:"🍔"},
+  "家居":   {"家纺":"🛏️","装饰摆件":"🕯️","家具小件":"🪑","灯具":"💡",_def:"🏠"},
+  "书籍文具": {"书":"📚","文具手帐":"📝","办公耗材":"🖨️",_def:"📖"},
+  "运动户外": {"运动服饰":"🏃","健身器材":"🏋️","户外露营":"⛺","瑜伽":"🧘",_def:"⚽"},
+  "宠物用品": {"主粮":"🍚","零食玩具":"🦴","用品":"🐾",_def:"🐾"}
+};
+const CAT_ICON_NAME=[
+  [/鞋|靴/, "👟"], [/裙/, "👗"], [/包/, "👜"], [/帽/, "🧢"],
+  [/精华|水|乳|霜|膜|护肤/, "🧴"], [/口红|唇|彩妆|粉|妆/, "💄"], [/香水|香薰/, "🌸"],
+  [/手机|平板|电脑/, "📱"], [/充电|耳机|音响|音箱/, "🎧"], [/书|小说|教材|绘本/, "📚"],
+  [/零食|糖|巧克力|饼干|薯片|坚果/, "🍪"], [/咖啡|茶|饮|奶|水/, "☕"], [/狗|猫|宠/, "🐾"],
+  [/玩偶|娃娃|公仔|抱枕/, "🧸"]
+];
+function catIcon(category, sub, name){
+  const g=CAT_ICON[category];
+  if(g){
+    if(sub && g[sub]) return g[sub];
+    if(name) for(const [re, ic] of CAT_ICON_NAME){ if(re.test(name)) return ic; }
+    return g._def;
+  }
+  return "🧺";
+}
+function itemImgTag(it, cls){
+  if(it.img) return '<img class="'+cls+'" src="'+it.img+'" alt="">';
+  const col=catColor(it.category);
+  return '<div class="'+cls+'" style="background:'+col+'1a">'+catIcon(it.category, it.sub, it.name)+'</div>';
+}
+/* ---- 颜色识别引擎 ---- */
+const BASE_COLORS={
+  "黑色":"#2d3436","白色":"#f2f4f6","灰色":"#95a5a6","深灰":"#4b5358","浅灰":"#d5dbdb",
+  "红色":"#e74c3c","酒红":"#8b1a2b","玫红":"#e84393","粉色":"#fab1a0","浅粉":"#ffd8d0",
+  "橙色":"#e17055","橘红":"#ff6b3d","黄色":"#fdcb6e","姜黄":"#d4a017",
+  "米色":"#f0e2c8","杏色":"#f0d5b8","卡其":"#c4a882","驼色":"#b58963",
+  "棕色":"#8b6914","咖啡色":"#6f4e37",
+  "绿色":"#27ae60","墨绿":"#1e5945","浅绿":"#a8e6cf","军绿":"#5c6b3c","青色":"#00cec9",
+  "蓝色":"#3498db","天蓝":"#87ceeb","深蓝":"#2c3e79","藏青":"#1f2a52","牛仔蓝":"#5b7db1",
+  "紫色":"#9b59b6","浅紫":"#c8a2d8","银色":"#bdc3c7","金色":"#f1c40f","透明":"#e8eaed"
+};
+/* 别名 / 关键字 → 标准色 */
+const COLOR_ALIAS={
+  "黑":"黑色","白":"白色","灰":"灰色","红":"红色","粉":"粉色","橙":"橙色","橘":"橙色","黄":"黄色",
+  "绿":"绿色","青":"青色","蓝":"蓝色","紫":"紫色","棕":"棕色","咖啡":"咖啡色","咖":"咖啡色",
+  "米":"米色","米白":"米色","奶白":"米色","象牙":"米色","杏":"杏色","裸":"杏色","肉":"杏色",
+  "卡其":"卡其","驼":"驼色","藏":"藏青","墨":"墨绿","军":"军绿","酒":"酒红","豆沙":"酒红",
+  "玫":"玫红","牛仔":"牛仔蓝","雾霾":"牛仔蓝","banana":"黄色","香槟":"金色","香蕉":"黄色",
+  "银":"银色","金":"金色","无色":"透明","本色":"米色","原色":"米色"
+};
+function hex2rgb(h){h=(h||'').replace('#','');if(h.length===3)h=h.split('').map(c=>c+c).join('');const n=parseInt(h,16);return[(n>>16)&255,(n>>8)&255,n&255];}
+function rgb2hex(r,g,b){return '#'+[r,g,b].map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('');}
+function shadeHex(hex,amt){const[r,g,b]=hex2rgb(hex);const f=v=>amt>0?v+(255-v)*amt:v*(1+amt);return rgb2hex(f(r),f(g),f(b));}
+/* 名称 → 色值（支持深/浅修饰与模糊关键字），无法识别返回空串 */
+function resolveColorHex(name){
+  if(!name)return '';
+  const raw=name.trim();
+  if(CUSTOM_COLORS[raw])return CUSTOM_COLORS[raw];
+  if(BASE_COLORS[raw])return BASE_COLORS[raw];
+  if(/^#[0-9a-f]{3}$|^#[0-9a-f]{6}$/i.test(raw))return raw.toLowerCase();
+  const n=raw.replace(/颜色$|色$/,'');
+  if(CUSTOM_COLORS[n])return CUSTOM_COLORS[n];
+  if(BASE_COLORS[n+'色'])return BASE_COLORS[n+'色'];
+  if(BASE_COLORS[n])return BASE_COLORS[n];
+  const keys=Object.keys(CUSTOM_COLORS).concat(Object.keys(BASE_COLORS),Object.keys(COLOR_ALIAS)).sort((a,b)=>b.length-a.length);
+  for(const k of keys){
+    if(!k||raw.indexOf(k)<0)continue;
+    const base=CUSTOM_COLORS[k]||BASE_COLORS[k]||BASE_COLORS[COLOR_ALIAS[k]];
+    if(!base)continue;
+    if(/深|暗|浓|重|墨/.test(raw))return shadeHex(base,-0.32);
+    if(/浅|淡|亮|嫩|柔|粉嫩/.test(raw))return shadeHex(base,0.38);
+    return base;
+  }
+  return '';
+}
+function colorHex(c){return resolveColorHex(c)||"#9b59b6";}
+/* 色值 → 最接近的颜色名 */
+function nearestColorName(hex){
+  const[r,g,b]=hex2rgb(hex);
+  const pool=Object.assign({},BASE_COLORS,CUSTOM_COLORS);
+  let best='',bd=Infinity;
+  for(const k in pool){
+    const[r2,g2,b2]=hex2rgb(pool[k]);
+    const rm=(r+r2)/2;
+    const d=Math.sqrt((2+rm/256)*(r-r2)**2+4*(g-g2)**2+(2+(255-rm)/256)*(b-b2)**2);
+    if(d<bd){bd=d;best=k;}
+  }
+  return best||'自定义色';
 }
 
 function switchTab(t){
@@ -936,12 +1034,14 @@ function openAdd(){
   ['fName','fBrand','fColor','fStyle','fSize','fLoc','fNote','fNewSub'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('fQty').value=1;document.getElementById('fExpiry').value='';
   document.getElementById('fColorHex').value='#9b59b6';document.getElementById('swatchFill').style.background='#9b59b6';
+  const _ch=document.getElementById('colorHint');if(_ch)_ch.textContent='';
+  pendingSaveData=null;
   pendingImg=null;document.getElementById('pv').className='pv';document.getElementById('pv').src='';document.getElementById('rmImg').style.display='none';
   document.getElementById('mask').classList.add('on');
 }
 function openEdit(id){
   const it=ITEMS.find(x=>x.id===id);if(!it)return;
-  editingId=id;dupConfirmed=true;
+  editingId=id;dupConfirmed=true;pendingSaveData=null;
   document.getElementById('modalTitle').textContent='编辑物品';
   document.getElementById('warn').className='warn';document.getElementById('warn').innerHTML='';
   document.getElementById('dup').className='dup';document.getElementById('dup').innerHTML='';
@@ -1015,24 +1115,56 @@ function saveItem(){
   if(!editingId&&!dupConfirmed){
     const matches=ITEMS.filter(it=>it.name.toLowerCase()===name.toLowerCase());
     if(matches.length){
+      pendingSaveData=data;
       const d=document.getElementById('dup');
       d.className='dup on';
-      d.innerHTML='<div class="dt">⚠️ 你已经拥有 <b>'+matches.length+'</b> 件同名物品，确认还要添加吗？</div>'+
-        matches.map(it=>{const im=it.img?'<img src="'+it.img+'">':'<div class="ph">🧺</div>';
-          return '<div class="di">'+im+'<div class="tx"><b>'+esc(it.name)+'</b><br>'+esc(it.brand?it.brand+' · ':'')+esc(it.color||'')+(it.color&&it.style?' · ':'')+esc(it.style||'')+' · '+esc(it.sub)+' · ×'+it.qty+'</div></div>';}).join('')+
-        '<div style="margin-top:10px"><button class="btn primary" style="width:100%" onclick="dupConfirmed=true;document.getElementById(\'dup\').classList.remove(\'on\');toast(\'已确认，可保存\')">我确定要添加</button></div>';
+      d.innerHTML='<div class="dt">⚠️ 你已经拥有 <b>'+matches.length+'</b> 件同名物品，请选择处理方式：</div>'+
+        matches.map(it=>{const im=itemImgTag(it,'ph');
+          return '<div class="di">'+im+'<div class="tx" style="flex:1"><b>'+esc(it.name)+'</b><br>'+esc(it.brand?it.brand+' · ':'')+esc(it.color||'')+(it.color&&it.style?' · ':'')+esc(it.style||'')+' · '+esc(it.sub)+' · ×'+it.qty+'</div>'+
+            '<button class="btn sm ghost" style="white-space:nowrap" onclick="mergeDupItem(\''+it.id+'\')">＋'+(data.qty||1)+' 合并</button></div>';}).join('')+
+        '<div style="margin-top:12px;display:flex;gap:8px">'+
+        '<button class="btn primary" style="flex:1" onclick="forceAddDup()">✅ 仍要新增一件</button>'+
+        '<button class="btn ghost" onclick="cancelDup()">取消</button></div>';
+      d.scrollIntoView({behavior:'smooth',block:'center'});
+      toast('检测到同名物品，请在下方选择「合并」或「新增」');
       return;
     }
   }
   if(editingId){const it=ITEMS.find(x=>x.id===editingId);Object.assign(it,data);toast('已更新');}
   else{ITEMS.push({id:uid(),createdAt:Date.now(),fav:false,...data});toast('已添加');}
-  // auto-save custom color if color picker was used
-  const colorName=data.color;const colorHex=document.getElementById('fColorHex').value;
-  if(colorName&&colorHex&&!CUSTOM_COLORS[colorName]){CUSTOM_COLORS[colorName]=colorHex;saveColors();}
+  // 自定义颜色入库（不覆盖内置标准色，避免影响全局同名颜色）
+  const colorName=data.color;const hexVal=document.getElementById('fColorHex').value;
+  if(colorName&&hexVal&&!BASE_COLORS[colorName]&&CUSTOM_COLORS[colorName]!==hexVal){CUSTOM_COLORS[colorName]=hexVal;saveColors();renderColorMgmt();}
+  pendingSaveData=null;dupConfirmed=false;
   saveItems();closeModal();renderSummary();renderChips();renderColorChips();renderList();
   // Check fav low stock after edit
   if(editingId){const it=ITEMS.find(x=>x.id===editingId);if(it&&it.fav&&it.qty<=1)showFavLowStock(it);}
   if(ITEMS.length>=30)toast('数据已 '+ITEMS.length+' 条，记得点「导出」备份');
+}
+/* ---- 同名物品处理 ---- */
+function forceAddDup(){
+  dupConfirmed=true;
+  const d=document.getElementById('dup');d.className='dup';d.innerHTML='';
+  saveItem();
+}
+function cancelDup(){
+  pendingSaveData=null;dupConfirmed=false;
+  const d=document.getElementById('dup');d.className='dup';d.innerHTML='';
+  toast('已取消');
+}
+function mergeDupItem(id){
+  const it=ITEMS.find(x=>x.id===id);
+  if(!it||!pendingSaveData){toast('合并失败，请重试');return;}
+  const add=Math.max(1,pendingSaveData.qty||1);
+  it.qty=(it.qty||1)+add;
+  // 补全原本为空的字段
+  ['brand','color','style','size','location','expiry'].forEach(k=>{if(!it[k]&&pendingSaveData[k])it[k]=pendingSaveData[k];});
+  if(!it.img&&pendingSaveData.img)it.img=pendingSaveData.img;
+  if(pendingSaveData.note)it.note=(it.note?it.note+'\n':'')+pendingSaveData.note;
+  pendingSaveData=null;dupConfirmed=false;
+  const d=document.getElementById('dup');d.className='dup';d.innerHTML='';
+  saveItems();closeModal();renderSummary();renderChips();renderColorChips();renderList();
+  toast('已合并到「'+it.name+'」，现有数量 ×'+it.qty);
 }
 function delItem(id){
   if(!confirm('确定删除这件物品吗？'))return;
@@ -1048,7 +1180,7 @@ function delItem(id){
 function openDetail(id){
   const it=ITEMS.find(x=>x.id===id);if(!it)return;
   detailId=id;
-  const img=it.img?'<img class="detail-img" src="'+it.img+'">':'<div class="detail-img">🧺</div>';
+  const img=itemImgTag(it,'detail-img');
   const favIcon=it.fav?'★ 已收藏':'☆ 收藏';
   const c=it.color?'<span class="tag c" style="display:inline-flex;align-items:center;gap:4px"><span class="color-dot" style="background:'+colorHex(it.color)+'"></span>'+esc(it.color)+'</span>':'';
   const s=it.style?'<span class="tag s">'+esc(it.style)+'</span>':'';
@@ -1107,7 +1239,7 @@ function renderOutfits(){
     const items=o.items.map(id=>ITEMS.find(i=>i.id===id)).filter(Boolean);
     return '<div class="outfit"><div class="oh"><div><div class="on">'+esc(o.name)+'</div>'+(o.note?'<div class="om">'+esc(o.note)+'</div>':'')+'</div><button class="btn sm ghost" onclick="delOutfit(\''+o.id+'\')">删除</button></div>'+
       '<div class="items">'+items.map(it=>{
-        const im=it.img?'<img src="'+it.img+'">':'<div class="ph">🧺</div>';
+        const im=itemImgTag(it,'ph');
         return '<div class="it">'+im+'<div class="tn">'+esc(it.name)+'</div></div>';
       }).join('')+'</div></div>';
   }).join('');
@@ -1136,7 +1268,7 @@ function renderOPicker(){
     return '<div class="pick-sec"><h4>'+esc(c)+'</h4><div class="pick-items">'+
       arr.map(it=>{
         const on=oSelectedIds.includes(it.id)?' on':'';
-        const im=it.img?'<img src="'+it.img+'">':'<div class="ph">🧺</div>';
+        const im=itemImgTag(it,'ph');
         return '<div class="pi'+on+'" onclick="toggleOutfitItem(\''+it.id+'\')">'+im+'<div class="tn">'+esc(it.name)+'</div></div>';
       }).join('')+'</div></div>';
   }).join('');
@@ -1175,9 +1307,15 @@ function updateThemeUI(){
   if(db){db.className='btn sm '+(v==='dark'?'primary':'ghost');}
 }
 function clearDemo(){
-  if(!confirm('确定删除示例数据吗？你自己添加的物品不受影响。'))return;
-  ITEMS=ITEMS.filter(it=>it.createdAt>Date.now()-2000);
-  saveItems();renderSummary();renderChips();renderColorChips();renderList();toast('示例数据已清除');
+  const targets=ITEMS.filter(isDemoItem);
+  if(!targets.length){toast('没有检测到示例数据，你的物品都是自己添加的');return;}
+  const names=targets.map(t=>'· '+t.name+(t.brand?'（'+t.brand+'）':'')).join('\n');
+  if(!confirm('将删除以下 '+targets.length+' 条示例数据：\n\n'+names+'\n\n你自己添加的物品不受影响。确定吗？'))return;
+  const ids=targets.map(t=>t.id);
+  ITEMS=ITEMS.filter(it=>!isDemoItem(it));
+  OUTFITS.forEach(o=>{o.items=(o.items||[]).filter(x=>!ids.includes(x));});saveOutfits();
+  saveItems();renderSummary();renderChips();renderColorChips();renderList();renderOutfits();
+  toast('已清除 '+targets.length+' 条示例数据');
 }
 function clearAll(){
   if(!confirm('⚠️ 将删除所有物品和穿搭数据，不可恢复！\n\n确定要继续吗？'))return;
@@ -1329,19 +1467,39 @@ function renderPieChart(){
 }
 
 /* ---- custom colors ---- */
+/* 输入颜色名 → 自动识别色块 */
 function syncColorPicker(){
   const name=document.getElementById('fColor').value.trim();
-  const hex=colorHex(name);
+  const resolved=resolveColorHex(name);
+  const hex=resolved||'#9b59b6';
   document.getElementById('fColorHex').value=hex;
   document.getElementById('swatchFill').style.background=hex;
+  const hint=document.getElementById('colorHint');
+  if(!hint)return;
+  if(!name){hint.textContent='';return;}
+  if(CUSTOM_COLORS[name]){hint.textContent='✓ 自定义色 '+hex;hint.style.color='var(--main)';}
+  else if(BASE_COLORS[name]){hint.textContent='✓ 已识别 '+hex;hint.style.color='var(--green)';}
+  else if(resolved){hint.textContent='≈ 近似识别 '+hex;hint.style.color='var(--green)';}
+  else{hint.textContent='未识别，点右侧色块自定义';hint.style.color='var(--sub)';}
 }
+/* 手动改色块 → 自动识别颜色名 */
 function pickCustomColor(){
-  const name=document.getElementById('fColor').value.trim();
+  const inp=document.getElementById('fColor');
   const hex=document.getElementById('fColorHex').value;
-  if(!name)return;
-  CUSTOM_COLORS[name]=hex;saveColors();
   document.getElementById('swatchFill').style.background=hex;
-  renderColorChips();renderList();
+  const name=inp.value.trim();
+  const hint=document.getElementById('colorHint');
+  // 名称为空、或是内置标准色 → 用色值反查最接近的颜色名自动填入
+  if(!name||BASE_COLORS[name]){
+    const nn=nearestColorName(hex);
+    inp.value=nn;
+    if(hint){hint.textContent='🎨 已自动识别为「'+nn+'」';hint.style.color='var(--green)';}
+    return;
+  }
+  // 自定义名称 → 保留名称，把新色值绑定到该名称
+  CUSTOM_COLORS[name]=hex;saveColors();
+  if(hint){hint.textContent='✓ 已把「'+name+'」设为 '+hex;hint.style.color='var(--main)';}
+  renderColorMgmt();renderColorChips();renderList();
 }
 function addCustomColor(){
   const name=document.getElementById('newColorName').value.trim();
@@ -1488,7 +1646,7 @@ function finishSearch(results){
   }
   box.innerHTML=top.map((r,i)=>{
     const it=r.item;
-    const img=it.img?'<img class="sr-img" src="'+it.img+'">':'<div class="sr-img">🧺</div>';
+    const img=itemImgTag(it,'sr-img');
     const level=r.score>=80?'excellent':r.score>=50?'good':r.score>=25?'fair':'low';
     const lvlColor=level==='excellent'?'#27ae60':level==='good'?'#9b59b6':level==='fair'?'#e17055':'#636e72';
     const lvlText=level==='excellent'?'高匹配':level==='good'?'中等匹配':level==='fair'?'部分相似':'可能相似';
@@ -1552,7 +1710,7 @@ function runTextSearch(){
   }
   box.innerHTML=scored.map((r,i)=>{
     const it=r.item;
-    const img=it.img?'<img class="sr-img" src="'+it.img+'">':'<div class="sr-img">🧺</div>';
+    const img=itemImgTag(it,'sr-img');
     const c=it.color?'<span class="tag c"><span class="color-dot" style="background:'+colorHex(it.color)+'"></span>'+esc(it.color)+'</span>':'';
     const b=it.brand?'<span class="tag b">'+esc(it.brand)+'</span>':'';
     const scoreColor=r.score>=40?'#27ae60':r.score>=20?'#9b59b6':'#636e72';
