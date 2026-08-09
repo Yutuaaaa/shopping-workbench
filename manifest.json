@@ -1,0 +1,16 @@
+{
+  "name": "我的拥有物清单",
+  "short_name": "拥有物",
+  "description": "记录已拥有的物品，自动分类，防止重复购买",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f5f0fa",
+  "theme_color": "#b980d0",
+  "icons": [
+    {
+      "src": "icon-1024.png",
+      "sizes": "1024x1024",
+      "type": "image/png"
+    }
+  ]
+}
